@@ -2,53 +2,74 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Форма лабораторной 4</title>
+    <title>Форма регистрации</title>
     <style>
-        body { font-family: sans-serif; max-width: 600px; margin: 20px auto; }
-        .error-field { border: 2px solid red; background-color: #fff4f4; }
-        .msg-box { border: 1px solid #ccc; padding: 10px; margin-bottom: 20px; }
-        label { display: block; margin-top: 10px; font-weight: bold; }
-        input[type="text"], input[type="date"], textarea, select { width: 100%; padding: 5px; }
+        .error { border: 2px solid red; }
+        .error-msg { color: red; font-size: 0.8em; }
     </style>
 </head>
 <body>
 
-    <?php if (!empty($messages)): ?>
-        <div class="msg-box"><?php foreach ($messages as $m) echo $m; ?></div>
+<?php 
+if (!empty($_COOKIE['save'])) { 
+    echo '<p style="color:green;">Данные успешно сохранены!</p>'; 
+    setcookie('save', '', 1); 
+} 
+?>
+
+<form action="" method="POST">
+    ФИО:<br />
+    <input name="name" 
+           value="<?php echo htmlspecialchars($values['name']); ?>" 
+           placeholder="Иванов Иван"
+           pattern="^[a-zA-Zа-яёА-ЯЁ\s\-]+$"
+           class="<?php echo !empty($_COOKIE['name_error']) ? 'error' : ''; ?>" required />
+    <?php if(!empty($_COOKIE['name_error'])) { echo '<span class="error-msg">Используйте только буквы</span>'; setcookie('name_error', '', 1); } ?>
+    <br />
+
+    Телефон:<br />
+    <input name="phone" 
+           value="<?php echo htmlspecialchars($values['phone']); ?>" 
+           placeholder="+79991234567"
+           class="<?php echo !empty($_COOKIE['phone_error']) ? 'error' : ''; ?>" required />
+    <?php if(!empty($_COOKIE['phone_error'])) { echo '<span class="error-msg">Неверный формат телефона</span>'; setcookie('phone_error', '', 1); } ?>
+    <br />
+
+    E-mail:<br />
+    <input name="email" 
+           type="email"
+           value="<?php echo htmlspecialchars($values['email']); ?>" 
+           required /><br />
+
+    Дата рождения:<br />
+    <input name="birthdate" type="date" value="<?php echo $values['birthdate']; ?>" required /><br />
+
+    Пол:
+    <input type="radio" name="gender" value="M" <?php if ($values['gender'] == 'M') echo 'checked'; ?>> Муж
+    <input type="radio" name="gender" value="F" <?php if ($values['gender'] == 'F') echo 'checked'; ?>> Жен <br />
+
+    Любимые языки программирования:<br />
+    <select name="languages[]" multiple="multiple" size="8" required>
+        <?php
+        $langs = [1 => 'Pascal', 2 => 'C', 3 => 'C++', 4 => 'JavaScript', 5 => 'PHP', 6 => 'Python', 7 => 'Java', 8 => 'Haskell'];
+        foreach ($langs as $id => $name) {
+            $selected = (isset($user_langs) && in_array($id, $user_langs)) ? 'selected' : '';
+            echo "<option value='$id' $selected>$name</option>";
+        }
+        ?>
+    </select><br />
+
+    Биография:<br />
+    <textarea name="biography" required><?php echo htmlspecialchars($values['biography']); ?></textarea><br />
+
+    <input type="submit" value="Отправить" />
+
+    <?php if(!empty($_SESSION['login'])): ?>
+        <br><br><a href="login.php">Выйти из системы</a>
+    <?php else: ?>
+        <br><br><a href="login.php">Войти</a>
     <?php endif; ?>
+</form>
 
-    <form action="index.php" method="POST">
-        <label>ФИО:</label>
-        <input name="name" value="<?= htmlspecialchars($values['name']) ?>" class="<?= $errors['name'] ? 'error-field' : '' ?>">
-
-        <label>Телефон:</label>
-        <input name="phone" value="<?= htmlspecialchars($values['phone']) ?>" class="<?= $errors['phone'] ? 'error-field' : '' ?>">
-
-        <label>E-mail:</label>
-        <input name="email" value="<?= htmlspecialchars($values['email']) ?>" class="<?= $errors['email'] ? 'error-field' : '' ?>">
-
-        <label>Дата рождения:</label>
-        <input type="date" name="date" value="<?= htmlspecialchars($values['date']) ?>" class="<?= $errors['date'] ? 'error-field' : '' ?>">
-
-        <label>Пол:</label>
-        <input type="radio" name="gender" value="m" <?= $values['gender'] == 'm' ? 'checked' : '' ?>> Муж
-        <input type="radio" name="gender" value="f" <?= $values['gender'] == 'f' ? 'checked' : '' ?>> Жен
-
-        <label>Любимый язык программирования:</label>
-        <select name="languages[]" multiple class="<?= $errors['languages'] ? 'error-field' : '' ?>">
-            <option value="cpp" <?= in_array('cpp', $values['languages']) ? 'selected' : '' ?>>C++</option>
-            <option value="php" <?= in_array('php', $values['languages']) ? 'selected' : '' ?>>PHP</option>
-            <option value="python" <?= in_array('python', $values['languages']) ? 'selected' : '' ?>>Python</option>
-        </select>
-
-        <label>Биография:</label>
-        <textarea name="bio" class="<?= $errors['bio'] ? 'error-field' : '' ?>"><?= htmlspecialchars($values['bio']) ?></textarea>
-
-        <div style="margin-top:10px;">
-            <input type="checkbox" name="agree" <?= $values['agree'] == 'on' ? 'checked' : '' ?>> С контрактом ознакомлен
-        </div>
-
-        <input type="submit" value="Отправить" style="margin-top:15px; padding: 10px 20px;">
-    </form>
 </body>
 </html>

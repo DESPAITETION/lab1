@@ -1,66 +1,97 @@
 <?php
-header('Content-Type: text/html; charset=UTF-8');
-session_start();
-
+// DB credentials
 $user = 'u82369';
 $pass_db = '4449825';
 
-if ($_SERVER['REQUEST_METHOD'] == 'GET') {
-  $messages = array();
-  if (!empty($_COOKIE['save'])) {
-    setcookie('save', '', 100000);
-    $messages[] = 'Результаты сохранены.';
-    if (!empty($_COOKIE['pass'])) {
-      $messages[] = sprintf('Войдите с логином <strong>%s</strong> и паролем <strong>%s</strong> для редактирования.',
-        strip_tags($_COOKIE['login']), strip_tags($_COOKIE['pass']));
-    }
-  }
+session_start();
 
-  $values = array();
-  // Поля в соответствии с твоей таблицей
-  $fields = ['name', 'phone', 'email', 'birthdate', 'gender', 'biography'];
-  foreach ($fields as $f) { $values[$f] = ''; }
+$values = ['name' => '', 'phone' => '', 'email' => '', 'birthdate' => '', 'gender' => 'M', 'biography' => ''];
+$user_langs = [];
 
-  // Если авторизован — берем данные из БД
-  if (!empty($_SESSION['login'])) {
-    try {
-      $db = new PDO("mysql:host=localhost;dbname=$user", $user, $pass_db);
-      $stmt = $db->prepare("SELECT * FROM application WHERE id = ?");
-      $stmt->execute([$_SESSION['uid']]);
-      $row = $stmt->fetch();
-      foreach ($fields as $f) { $values[$f] = strip_tags($row[$f]); }
-    } catch (PDOException $e) { echo 'Ошибка: ' . $e->getMessage(); exit(); }
-  }
-
-  include('form.php');
-} else {
-  // Простейшая проверка (добавь сюда свою валидацию из 4 лабы)
-  $errors = empty($_POST['name']) || empty($_POST['phone']); 
-
-  if ($errors) {
-    header('Location: index.php');
-    exit();
-  }
-
-  try {
+try {
     $db = new PDO("mysql:host=localhost;dbname=$user", $user, $pass_db);
-    
+} catch (PDOException $e) {
+    exit('DB Error: ' . $e->getMessage());
+}
+
+if ($_SERVER['REQUEST_METHOD'] == 'GET') {
     if (!empty($_SESSION['login'])) {
-      // Обновление существующего
-      $stmt = $db->prepare("UPDATE application SET name = ?, phone = ?, email = ?, birthdate = ?, gender = ?, biography = ? WHERE id = ?");
-      $stmt->execute([$_POST['name'], $_POST['phone'], $_POST['email'], $_POST['birthdate'], $_POST['gender'], $_POST['biography'], $_SESSION['uid']]);
-    } else {
-      // Новый пользователь
-      $login = 'user' . rand(1, 1000);
-      $pass = substr(md5(uniqid()), 0, 8);
-      setcookie('login', $login);
-      setcookie('pass', $pass);
+        $stmt = $db->prepare("SELECT * FROM application WHERE login = ?");
+        $stmt->execute([$_SESSION['login']]);
+        $row = $stmt->fetch();
+        if ($row) $values = $row;
 
-      $stmt = $db->prepare("INSERT INTO application (name, phone, email, birthdate, gender, biography, login, password) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-      $stmt->execute([$_POST['name'], $_POST['phone'], $_POST['email'], $_POST['birthdate'], $_POST['gender'], $_POST['biography'], $login, md5($pass)]);
+        $stmt = $db->prepare("SELECT language_id FROM application_languages WHERE application_id = ?");
+        $stmt->execute([$values['id']]);
+        $user_langs = $stmt->fetchAll(PDO::FETCH_COLUMN);
     }
-  } catch (PDOException $e) { echo 'Ошибка БД: ' . $e->getMessage(); exit(); }
+    include('form.php');
+} else {
+    // 1. VALIDATION
+    $errors = false;
+    if (empty($_POST['name']) || !preg_match('/^[a-zA-Zа-яёА-ЯЁ\s\-]+$/u', $_POST['name'])) {
+        setcookie('name_error', '1', time() + 24 * 3600);
+        $errors = true;
+    }
+    if (empty($_POST['phone']) || !preg_match('/^\+?[0-9]+$/', $_POST['phone'])) {
+        setcookie('phone_error', '1', time() + 24 * 3600);
+        $errors = true;
+    }
+    if (empty($_POST['languages'])) {
+        setcookie('lang_error', '1', time() + 24 * 3600);
+        $errors = true;
+    }
 
-  setcookie('save', '1');
-  header('Location: index.php');
+    if ($errors) {
+        header('Location: index.php');
+        exit();
+    }
+
+    // 2. SAVING
+    try {
+        if (!empty($_SESSION['login'])) {
+            // Update existing user
+            $stmt = $db->prepare("UPDATE application SET name = ?, phone = ?, email = ?, birthdate = ?, gender = ?, biography = ? WHERE login = ?");
+            $stmt->execute([$_POST['name'], $_POST['phone'], $_POST['email'], $_POST['birthdate'], $_POST['gender'], $_POST['biography'], $_SESSION['login']]);
+
+            $stmt = $db->prepare("SELECT id FROM application WHERE login = ?");
+            $stmt->execute([$_SESSION['login']]);
+            $user_id = $stmt->fetchColumn();
+            
+            $db->prepare("DELETE FROM application_languages WHERE application_id = ?")->execute([$user_id]);
+        } else {
+            // New user registration
+            $login = 'user' . rand(1, 10000);
+            $pass = substr(md5(uniqid()), 0, 8);
+            
+            // Сохраняем в куки для авто-входа
+            setcookie('login', $login, time() + 3600 * 24 * 365);
+            setcookie('pass', $pass, time() + 3600 * 24 * 365);
+
+            $stmt = $db->prepare("INSERT INTO application (name, phone, email, birthdate, gender, biography, login, password) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt->execute([$_POST['name'], $_POST['phone'], $_POST['email'], $_POST['birthdate'], $_POST['gender'], $_POST['biography'], $login, md5($pass)]);
+            $user_id = $db->lastInsertId();
+            
+            // ВЫВОДИМ ЛОГИН И ПАРОЛЬ (чтобы пользователь их увидел)
+            echo "Registration successful!<br>Login: <b>$login</b><br>Password: <b>$pass</b><br>";
+            echo "<a href='index.php'>Go to Form</a>";
+            
+            // Сохраняем языки и останавливаем скрипт, чтобы показать данные
+            if (!empty($_POST['languages'])) {
+                $stmt = $db->prepare("INSERT INTO application_languages (application_id, language_id) VALUES (?, ?)");
+                foreach ($_POST['languages'] as $lang_id) { $stmt->execute([$user_id, $lang_id]); }
+            }
+            exit(); 
+        }
+
+        // Save languages for updated user
+        if (!empty($_POST['languages'])) {
+            $stmt = $db->prepare("INSERT INTO application_languages (application_id, language_id) VALUES (?, ?)");
+            foreach ($_POST['languages'] as $lang_id) { $stmt->execute([$user_id, $lang_id]); }
+        }
+
+    } catch (PDOException $e) { exit('DB Error: ' . $e->getMessage()); }
+
+    setcookie('save', '1');
+    header('Location: index.php');
 }
