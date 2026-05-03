@@ -1,95 +1,61 @@
 <?php
-/**
- * Задача 6. Панель администратора.
- */
-
+session_start();
 $user = 'u82369';
 $pass_db = '4449825';
 
+// HTTP Basic Auth
+if (empty($_SERVER['PHP_AUTH_USER']) || empty($_SERVER['PHP_AUTH_PW']) ||
+    $_SERVER['PHP_AUTH_USER'] != 'admin' || md5($_SERVER['PHP_AUTH_PW']) != md5('admin_pass')) {
+    header('HTTP/1.1 401 Unauthorized');
+    header('WWW-Authenticate: Basic realm="My Site"');
+    exit('Доступ запрещен');
+}
+
 try {
     $db = new PDO("mysql:host=localhost;dbname=$user", $user, $pass_db);
-} catch (PDOException $e) {
-    exit('DB connection failed: ' . $e->getMessage());
-}
-
-// 1. HTTP-авторизация
-if (empty($_SERVER['PHP_AUTH_USER']) || empty($_SERVER['PHP_AUTH_PW'])) {
-    header('HTTP/1.1 401 Unauthorized');
-    header('WWW-Authenticate: Basic realm="Admin Page"');
-    exit('<h1>401 Требуется авторизация</h1>');
-}
-
-$stmt = $db->prepare("SELECT password FROM admin_users WHERE login = ?");
-$stmt->execute([$_SERVER['PHP_AUTH_USER']]);
-$admin_pass_hash = $stmt->fetchColumn();
-
-// Проверка пароля (используем md5, как в твоей базе)
-if (!$admin_pass_hash || md5($_SERVER['PHP_AUTH_PW']) !== $admin_pass_hash) {
-    header('HTTP/1.1 401 Unauthorized');
-    header('WWW-Authenticate: Basic realm="Admin Page"');
-    exit('<h1>401 Неверный логин или пароль</h1>');
-}
-
-echo "<h1>Панель администратора</h1>";
-
-// 2. СТАТИСТИКА ПО ЯЗЫКАМ (с именами вместо ID)
-echo "<h2>Статистика по языкам</h2>";
-
-// Сопоставление ID и названий
-$lang_names = [
-    1 => 'Pascal', 
-    2 => 'C', 
-    3 => 'C++', 
-    4 => 'JavaScript', 
-    5 => 'PHP', 
-    6 => 'Python', 
-    7 => 'Java', 
-    8 => 'Haskell'
-];
-
-$res = $db->query("SELECT language_id, COUNT(*) as count FROM application_languages GROUP BY language_id");
-
-echo "<table border='1'>
-        <tr>
-            <th>Язык программирования</th>
-            <th>Количество любителей</th>
-        </tr>";
-
-while ($row = $res->fetch()) {
-    $id = $row['language_id'];
-    $name = isset($lang_names[$id]) ? $lang_names[$id] : "ID: $id";
     
-    echo "<tr>
-            <td>" . htmlspecialchars($name) . "</td>
-            <td>" . $row['count'] . "</td>
-          </tr>";
+    // Статистика по языкам
+    $stats = $db->query("SELECT l.name, COUNT(al.application_id) as count 
+                         FROM languages l 
+                         LEFT JOIN application_languages al ON l.id = al.language_id 
+                         GROUP BY l.id")->fetchAll();
+
+    // Список всех пользователей
+    $users = $db->query("SELECT * FROM application")->fetchAll();
+} catch (PDOException $e) {
+    error_log($e->getMessage());
+    exit('Ошибка загрузки данных.');
 }
-echo "</table>";
+?>
 
-// 3. СПИСОК ПОЛЬЗОВАТЕЛЕЙ
-echo "<h2>Список всех пользователей</h2>";
-$users = $db->query("SELECT * FROM application");
+<h2>Панель администратора</h2>
 
-echo "<table border='1'>
+<h3>Статистика по языкам:</h3>
+<ul>
+    <?php foreach($stats as $s): ?>
+        <li><?php echo htmlspecialchars($s['name']) . ": " . $s['count']; ?></li>
+    <?php endforeach; ?>
+</ul>
+
+<h3>Список пользователей:</h3>
+<table border="1">
     <tr>
         <th>ID</th>
-        <th>ФИО</th>
-        <th>Телефон</th>
-        <th>Email</th>
+        <th>Имя</th>
+        <th>Логин</th>
         <th>Действия</th>
-    </tr>";
-
-while ($u = $users->fetch()) {
-    echo "<tr>
-        <td>{$u['id']}</td>
-        <td>" . htmlspecialchars($u['name']) . "</td>
-        <td>" . htmlspecialchars($u['phone']) . "</td>
-        <td>" . htmlspecialchars($u['email']) . "</td>
+    </tr>
+    <?php foreach($users as $u): ?>
+    <tr>
+        <td><?= $u['id'] ?></td>
+        <td><?= htmlspecialchars($u['name']) ?></td>
+        <td><?= htmlspecialchars($u['login']) ?></td>
         <td>
-            <a href='edit.php?id={$u['id']}'>Редактировать</a> | 
-            <a href='delete.php?id={$u['id']}' onclick='return confirm(\"Вы уверены?\")' style='color:red;'>Удалить</a>
+            <a href="edit.php?id=<?= $u['id'] ?>">Редактировать</a> | 
+            <!-- CSRF защита: передаем токен в ссылке -->
+            <a href="delete.php?id=<?= $u['id'] ?>&token=<?= $_SESSION['csrf_token'] ?>" 
+               onclick="return confirm('Вы уверены?')">Удалить</a>
         </td>
-    </tr>";
-}
-echo "</table>";
-?>
+    </tr>
+    <?php endforeach; ?>
+</table>
